@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Camera, Lock, Shield, CheckCircle, ArrowLeft, QrCode, Menu, X, History, Users, User, Settings, HelpCircle, LogOut, ChevronRight } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import jsQR from 'jsqr';
+import { Lock, Shield, CheckCircle, ArrowLeft, QrCode, Menu, X, History, Users, User, Settings, HelpCircle, LogOut, ChevronRight } from 'lucide-react';
 
 const API_URL = "https://shortid-backend-production.up.railway.app";
 
@@ -15,13 +16,17 @@ const MobileApp = () => {
   const [errorMessage, setErrorMessage] = useState('');
   const [selectedFamilyMembers, setSelectedFamilyMembers] = useState([]);
   const [sharing, setSharing] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const scanIntervalRef = useRef(null);
 
   const simulatedUserData = {
     name: 'Rajesh Kumar',
     photo: null,
     address: 'H.No 245, Sector 21, Gurugram, Haryana - 122001',
     dob: '15/03/1990',
-    phone: phoneNumber,
     gender: 'Male',
   };
 
@@ -29,6 +34,88 @@ const MobileApp = () => {
     { name: 'Priya Kumar', relation: 'Spouse', dob: '20/05/1992', isMinor: false },
     { name: 'Aarav Kumar', relation: 'Son', dob: '15/08/2015', isMinor: true }
   ];
+
+
+  // Cleanup camera on screen change
+  useEffect(() => {
+    if (screen !== 'scan-qr') {
+      stopCamera();
+    }
+  }, [screen]);
+
+  const startCamera = async () => {
+    setCameraError('');
+    setScanning(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' }
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+        startScanning();
+      }
+    } catch (err) {
+      setCameraError('Camera access denied. Please allow camera permission and try again.');
+      setScanning(false);
+    }
+  };
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+    if (scanIntervalRef.current) {
+      clearInterval(scanIntervalRef.current);
+      scanIntervalRef.current = null;
+    }
+    setScanning(false);
+  };
+
+  const startScanning = () => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    scanIntervalRef.current = setInterval(() => {
+      const video = videoRef.current;
+      if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) return;
+      
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+      if (code && code.data) {
+        stopCamera();
+        handleQRResult(code.data);
+      }
+    }, 300);
+  };
+
+  const handleQRResult = (qrData) => {
+    // QR code should contain hotel code like "HTL-XXXXXX"
+    // or a JSON string like {"hotelCode":"HTL-XXXXXX","name":"Hotel Name","location":"..."}
+    try {
+      const parsed = JSON.parse(qrData);
+      setScannedHotel({
+        name: parsed.name || 'Hotel',
+        location: parsed.location || '',
+        code: parsed.hotelCode || parsed.code || qrData
+      });
+    } catch {
+      // Plain text hotel code
+      setScannedHotel({
+        name: 'Hotel',
+        location: '',
+        code: qrData
+      });
+    }
+    setScreen('confirm-share');
+  };
 
   const handleLogin = () => {
     setErrorMessage('');
@@ -68,20 +155,6 @@ const MobileApp = () => {
     setScreen('home');
   };
 
-  const handleScanQR = () => {
-    // In real app, this opens camera. For demo, simulate a hotel scan.
-    // The hotel code should come from scanning the QR at reception.
-    const hotelCode = localStorage.getItem('lastHotelCode') || 'HTL-DEMO';
-    setTimeout(() => {
-      setScannedHotel({
-        name: 'Hotel Pinnacle',
-        location: 'Connaught Place, New Delhi',
-        code: hotelCode
-      });
-      setScreen('confirm-share');
-    }, 1000);
-  };
-
   const handleConfirmShare = async () => {
     setErrorMessage('');
     const savedPin = localStorage.getItem('userPin');
@@ -91,7 +164,6 @@ const MobileApp = () => {
     }
     setSharing(true);
     try {
-      // Generate a short SID
       const sidNumber = 'SID-' + Math.random().toString(36).substring(2, 8).toUpperCase();
       const res = await fetch(`${API_URL}/api/share`, {
         method: 'POST',
@@ -132,6 +204,7 @@ const MobileApp = () => {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden">
 
+        {/* LOGIN */}
         {screen === 'login' && (
           <div className="p-8">
             <div className="text-center mb-8">
@@ -158,6 +231,7 @@ const MobileApp = () => {
           </div>
         )}
 
+        {/* OTP */}
         {screen === 'otp' && (
           <div className="p-8">
             <button onClick={() => setScreen('login')} className="mb-4 text-indigo-600"><ArrowLeft className="w-6 h-6" /></button>
@@ -177,6 +251,7 @@ const MobileApp = () => {
           </div>
         )}
 
+        {/* CREDENTIAL ISSUER */}
         {screen === 'credential-issuer' && (
           <div className="p-8">
             <button onClick={() => setScreen('otp')} className="mb-4 text-indigo-600"><ArrowLeft className="w-6 h-6" /></button>
@@ -206,6 +281,7 @@ const MobileApp = () => {
           </div>
         )}
 
+        {/* FETCH ID */}
         {screen === 'fetch-id' && (
           <div className="p-8">
             <button onClick={() => setScreen('credential-issuer')} className="mb-4 text-indigo-600"><ArrowLeft className="w-6 h-6" /></button>
@@ -230,6 +306,7 @@ const MobileApp = () => {
           </div>
         )}
 
+        {/* SETUP PIN */}
         {screen === 'setup-pin' && (
           <div className="p-8">
             <div className="text-center mb-8">
@@ -262,6 +339,7 @@ const MobileApp = () => {
           </div>
         )}
 
+        {/* HOME */}
         {screen === 'home' && userData && (
           <div className="p-6">
             <div className="flex justify-between items-center mb-4">
@@ -309,6 +387,7 @@ const MobileApp = () => {
           </div>
         )}
 
+        {/* MENU */}
         {screen === 'menu' && (
           <div className="p-6">
             <div className="flex justify-between items-center mb-6">
@@ -319,10 +398,10 @@ const MobileApp = () => {
             </div>
             <div className="space-y-3">
               {[
-                { icon: <History className="w-5 h-5 text-blue-600"/>, bg: 'bg-blue-100', label: 'Share History', action: null },
+                { icon: <History className="w-5 h-5 text-blue-600"/>, bg: 'bg-blue-100', label: 'Share History' },
                 { icon: <Users className="w-5 h-5 text-green-600"/>, bg: 'bg-green-100', label: 'Family & Minors', action: () => setScreen('select-family-share') },
-                { icon: <Settings className="w-5 h-5 text-purple-600"/>, bg: 'bg-purple-100', label: 'Settings', action: null },
-                { icon: <HelpCircle className="w-5 h-5 text-orange-600"/>, bg: 'bg-orange-100', label: 'Help & Support', action: null },
+                { icon: <Settings className="w-5 h-5 text-purple-600"/>, bg: 'bg-purple-100', label: 'Settings' },
+                { icon: <HelpCircle className="w-5 h-5 text-orange-600"/>, bg: 'bg-orange-100', label: 'Help & Support' },
               ].map(({ icon, bg, label, action }) => (
                 <button key={label} onClick={action || undefined}
                   className="w-full bg-white border border-gray-200 rounded-xl p-4 hover:bg-gray-50 transition flex items-center justify-between">
@@ -344,6 +423,7 @@ const MobileApp = () => {
           </div>
         )}
 
+        {/* SELECT FAMILY */}
         {screen === 'select-family-share' && (
           <div className="p-6">
             <div className="flex items-center mb-6">
@@ -390,24 +470,51 @@ const MobileApp = () => {
           </div>
         )}
 
+        {/* SCAN QR */}
         {screen === 'scan-qr' && (
-          <div className="p-8">
-            <button onClick={() => setScreen('home')} className="mb-4 text-indigo-600"><ArrowLeft className="w-6 h-6" /></button>
-            <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">Scan Hotel QR Code</h2>
-            <div className="bg-gray-900 rounded-2xl p-8 mb-6 aspect-square flex items-center justify-center">
-              <Camera className="w-16 h-16 text-white opacity-50" />
-            </div>
-            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 mb-4">
-              <p className="text-sm text-yellow-800 text-center">
-                <strong>Demo:</strong> Camera not available. Click simulate to continue.
-              </p>
-            </div>
-            <button onClick={handleScanQR} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition">
-              Simulate QR Scan
+          <div className="p-6">
+            <button onClick={() => { stopCamera(); setScreen('home'); }} className="mb-4 text-indigo-600">
+              <ArrowLeft className="w-6 h-6" />
             </button>
+            <h2 className="text-2xl font-bold text-gray-800 mb-4 text-center">Scan Hotel QR Code</h2>
+
+            {/* Camera viewfinder */}
+            <div className="relative bg-gray-900 rounded-2xl overflow-hidden mb-4" style={{aspectRatio:'1'}}>
+              <video ref={videoRef} className="w-full h-full object-cover" playsInline muted autoPlay />
+              {scanning && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="w-48 h-48 border-4 border-white rounded-xl opacity-70"></div>
+                </div>
+              )}
+              {!scanning && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <QrCode className="w-16 h-16 text-white opacity-30" />
+                </div>
+              )}
+            </div>
+
+            {cameraError && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
+                <p className="text-sm text-red-700">{cameraError}</p>
+              </div>
+            )}
+
+            {scanning ? (
+              <div className="text-center">
+                <p className="text-indigo-600 font-semibold mb-3">📷 Scanning... point at hotel QR code</p>
+                <button onClick={stopCamera} className="w-full bg-gray-200 text-gray-700 py-3 rounded-xl font-semibold">
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button onClick={startCamera} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition">
+                📷 Open Camera to Scan
+              </button>
+            )}
           </div>
         )}
 
+        {/* CONFIRM SHARE */}
         {screen === 'confirm-share' && scannedHotel && (
           <div className="p-8">
             <button onClick={() => setScreen('home')} className="mb-4 text-indigo-600"><ArrowLeft className="w-6 h-6" /></button>
@@ -416,6 +523,7 @@ const MobileApp = () => {
             <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-6">
               <h3 className="font-bold text-lg text-gray-800">{scannedHotel.name}</h3>
               <p className="text-sm text-gray-600">{scannedHotel.location}</p>
+              <p className="text-xs text-gray-400 mt-1 font-mono">Code: {scannedHotel.code}</p>
             </div>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">Enter PIN to confirm</label>
@@ -432,6 +540,7 @@ const MobileApp = () => {
           </div>
         )}
 
+        {/* SUCCESS */}
         {screen === 'success' && (
           <div className="p-8 text-center">
             <div className="w-24 h-24 bg-green-100 rounded-full mx-auto mb-6 flex items-center justify-center">
