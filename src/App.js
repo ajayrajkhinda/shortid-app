@@ -153,6 +153,130 @@ const ConfirmShareScreen = ({ scannedHotel, selectedFamilyMembers, familyMembers
   );
 };
 
+
+const FetchingScreen = ({ onDone, onBack }) => {
+  const [step, setStep] = useState(0);
+  const steps = [
+    'Connecting to DigiLocker...',
+    'Verifying Aadhaar link...',
+    'Fetching your identity...',
+    'Securing your data...',
+    'Almost done...',
+  ];
+
+  useEffect(() => {
+    const timers = [];
+    steps.forEach((_, i) => {
+      timers.push(setTimeout(() => setStep(i), i * 700));
+    });
+    timers.push(setTimeout(() => onDone(), steps.length * 700 + 300));
+    return () => timers.forEach(t => clearTimeout(t));
+  }, []);
+
+  return (
+    <div className="p-8 flex flex-col items-center justify-center" style={{ minHeight: 420 }}>
+      <div className="w-24 h-24 bg-purple-100 rounded-full flex items-center justify-center mb-6 relative">
+        <Shield className="w-12 h-12 text-purple-600"/>
+        <div className="absolute inset-0 rounded-full border-4 border-purple-300 border-t-purple-600 animate-spin"/>
+      </div>
+      <h2 className="text-2xl font-bold text-gray-800 mb-2 text-center">Fetching Your ID</h2>
+      <p className="text-gray-500 text-sm mb-8 text-center">Please wait while we securely retrieve your details</p>
+
+      <div className="w-full space-y-3">
+        {steps.map((s, i) => (
+          <div key={i} className={`flex items-center space-x-3 transition-opacity duration-300 ${i <= step ? 'opacity-100' : 'opacity-30'}`}>
+            <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${i < step ? 'bg-green-500' : i === step ? 'bg-purple-600 animate-pulse' : 'bg-gray-200'}`}>
+              {i < step && <span style={{color:'white', fontSize:10, fontWeight:'bold'}}>✓</span>}
+            </div>
+            <p className={`text-sm ${i <= step ? 'text-gray-800 font-medium' : 'text-gray-400'}`}>{s}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-8 bg-blue-50 border border-blue-100 rounded-xl p-3 w-full">
+        <p className="text-xs text-blue-700 text-center">🔒 Your Aadhaar number is never stored on our servers</p>
+      </div>
+    </div>
+  );
+};
+
+
+const EnterDetailsScreen = ({ onSubmit, onBack }) => {
+  const [name, setName] = useState('');
+  const [dob, setDob] = useState('');
+  const [gender, setGender] = useState('Male');
+  const [address, setAddress] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSubmit = () => {
+    if (!name.trim()) { setError('Please enter your full name'); return; }
+    if (!dob.trim()) { setError('Please enter your date of birth (DD/MM/YYYY)'); return; }
+    if (!address.trim()) { setError('Please enter your address'); return; }
+    onSubmit({ name: name.trim(), dob: dob.trim(), gender, address: address.trim() });
+  };
+
+  return (
+    <div className="p-6 overflow-y-auto" style={{ maxHeight: '100vh' }}>
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center space-x-2">
+          <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+            <span style={{color:'white', fontSize:10, fontWeight:'bold'}}>✓</span>
+          </div>
+          <span className="text-sm text-green-600 font-semibold">DigiLocker Connected</span>
+        </div>
+        <div className="px-2 py-1 bg-purple-100 rounded-lg">
+          <span className="text-xs text-purple-700 font-semibold">VERIFIED</span>
+        </div>
+      </div>
+
+      <div className="bg-green-50 border border-green-200 rounded-xl p-3 mb-5">
+        <p className="text-sm text-green-800">
+          ✅ <strong>Identity fetched successfully.</strong> Please review and confirm your details below before creating your ShortID.
+        </p>
+      </div>
+
+      <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+      <input
+        type="text" placeholder="As per Aadhaar" value={name}
+        onChange={e => { setName(e.target.value); setError(''); }}
+        autoComplete="name"
+        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-4"
+      />
+
+      <label className="block text-sm font-medium text-gray-700 mb-2">Date of Birth</label>
+      <input
+        type="text" placeholder="DD/MM/YYYY" value={dob}
+        onChange={e => { setDob(e.target.value); setError(''); }}
+        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-4"
+      />
+
+      <label className="block text-sm font-medium text-gray-700 mb-2">Gender</label>
+      <select value={gender} onChange={e => setGender(e.target.value)}
+        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-4">
+        <option>Male</option>
+        <option>Female</option>
+        <option>Other</option>
+      </select>
+
+      <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
+      <textarea
+        placeholder="As per Aadhaar" value={address}
+        onChange={e => { setAddress(e.target.value); setError(''); }}
+        rows={3}
+        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-4 resize-none"
+      />
+
+      {error && <p className="text-red-600 text-sm mb-3">⚠️ {error}</p>}
+
+      <button onClick={handleSubmit}
+        className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition">
+        Confirm & Create ShortID
+      </button>
+      <p className="text-center text-xs text-gray-400 mt-3">🔒 Your Aadhaar number is not stored anywhere</p>
+    </div>
+  );
+};
+
 // ── Main App ──
 
 const MobileApp = () => {
@@ -236,14 +360,12 @@ const MobileApp = () => {
     }
   };
 
-  const handleFetchId = () => {
-    setTimeout(() => {
-      const sid = getOrCreateSID();
-      const data = { name: 'Rajesh Kumar', address: 'H.No 245, Sector 21, Gurugram, Haryana - 122001', dob: '15/03/1990', gender: 'Male', phone: phoneNumber, sid };
-      setUserData(data);
-      localStorage.setItem('userData', JSON.stringify(data));
-      setScreen('setup-pin');
-    }, 1500);
+  const handleFetchId = (formData) => {
+    const sid = getOrCreateSID();
+    const data = { ...formData, phone: phoneNumber, sid };
+    setUserData(data);
+    localStorage.setItem('userData', JSON.stringify(data));
+    setScreen('setup-pin');
   };
 
   const handleSetupPin = (pin) => { localStorage.setItem('userPin', pin); setScreen('home'); };
@@ -330,22 +452,16 @@ const MobileApp = () => {
                 </button>
               ))}
             </div>
+
           </div>
         )}
 
         {screen === 'fetch-id' && (
-          <div className="p-8">
-            <button onClick={() => setScreen('credential-issuer')} className="mb-4 text-indigo-600"><ArrowLeft className="w-6 h-6"/></button>
-            <div className="text-center mb-8">
-              <div className="w-20 h-20 bg-green-100 rounded-full mx-auto mb-4 flex items-center justify-center"><Shield className="w-10 h-10 text-green-600"/></div>
-              <h2 className="text-2xl font-bold text-gray-800 mb-2">Create ID Credentials</h2>
-              <p className="text-gray-500">We'll securely fetch your details</p>
-            </div>
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
-              <p className="text-sm text-blue-800"><strong>What we fetch:</strong><br/>• Your Name • Your Photo<br/>• Your Address • Date of Birth<br/><br/><strong>We DO NOT store your Aadhaar number</strong></p>
-            </div>
-            <button onClick={handleFetchId} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition">Fetch My ID Details</button>
-          </div>
+          <FetchingScreen onDone={() => setScreen('enter-details')} onBack={() => setScreen('credential-issuer')} />
+        )}
+
+        {screen === 'enter-details' && (
+          <EnterDetailsScreen onSubmit={handleFetchId} onBack={() => setScreen('credential-issuer')} />
         )}
 
         {screen === 'setup-pin' && <SetupPinScreen onSetup={handleSetupPin} />}
