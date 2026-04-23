@@ -45,7 +45,7 @@ const LoginScreen = ({ onLogin, onOtp }) => {
   );
 };
 
-const OtpScreen = ({ phoneNumber, onVerify, onBack }) => {
+const OtpScreen = ({ phoneNumber, onVerify, onBack, loading }) => {
   const [otp, setOtp] = useState('');
   return (
     <div className="p-8">
@@ -55,15 +55,16 @@ const OtpScreen = ({ phoneNumber, onVerify, onBack }) => {
       <input
         type="text" inputMode="numeric" maxLength="6" placeholder="Enter 6 digit OTP"
         value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g,''))}
-        onKeyDown={e => e.key==='Enter' && otp.length===6 && onVerify(otp)}
+        onKeyDown={e => e.key==='Enter' && otp.length===6 && !loading && onVerify(otp)}
         className="w-full px-4 py-3 border border-gray-300 rounded-xl text-center text-2xl tracking-widest focus:ring-2 focus:ring-indigo-500 mb-2"
         autoComplete="one-time-code"
       />
       <p className="text-sm text-gray-400 text-center mb-4">Demo: enter any 6 digits</p>
-      <button onClick={() => onVerify(otp)} disabled={otp.length!==6}
+      <button onClick={() => onVerify(otp)} disabled={otp.length!==6 || loading}
         className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 disabled:bg-gray-300 transition">
-        Verify OTP
+        {loading ? 'Checking...' : 'Verify OTP'}
       </button>
+      {loading && <p className="text-center text-sm text-indigo-500 mt-3 animate-pulse">Looking up your account...</p>}
     </div>
   );
 };
@@ -286,6 +287,7 @@ const MobileApp = () => {
   const [scannedHotel, setScannedHotel] = useState(null);
   const [selectedFamilyMembers, setSelectedFamilyMembers] = useState([]);
   const [scanning, setScanning] = useState(false);
+  const [userLoading, setUserLoading] = useState(false);
   const [cameraError, setCameraError] = useState('');
   const [shareHistory, setShareHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -352,19 +354,48 @@ const MobileApp = () => {
 
   const handleLoginSubmit = (phone) => { setPhoneNumber(phone); setScreen('otp'); };
 
-  const handleOtpVerify = (otp) => {
+  const handleOtpVerify = async (otp) => {
     if (otp.length === 6) {
-      const existing = localStorage.getItem('userData');
-      if (existing) { setUserData(JSON.parse(existing)); setScreen('home'); }
-      else setScreen('credential-issuer');
+      setUserLoading(true);
+      try {
+        const res = await fetch(`${API_URL}/api/user/${phoneNumber}`);
+        const data = await res.json();
+        if (data.success && data.exists) {
+          // User found in backend — restore and go home
+          const u = data.user;
+          setUserData(u);
+          localStorage.setItem('userData', JSON.stringify(u));
+          localStorage.setItem('userSID', u.sid);
+          setUserLoading(false);
+          setScreen('home');
+        } else {
+          // New user — go through credential flow
+          setUserLoading(false);
+          setScreen('credential-issuer');
+        }
+      } catch (e) {
+        // Fallback to localStorage if network fails
+        const existing = localStorage.getItem('userData');
+        setUserLoading(false);
+        if (existing) { setUserData(JSON.parse(existing)); setScreen('home'); }
+        else setScreen('credential-issuer');
+      }
     }
   };
 
-  const handleFetchId = (formData) => {
+  const handleFetchId = async (formData) => {
     const sid = getOrCreateSID();
     const data = { ...formData, phone: phoneNumber, sid };
     setUserData(data);
     localStorage.setItem('userData', JSON.stringify(data));
+    // Save to backend
+    try {
+      await fetch(`${API_URL}/api/user/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+    } catch (e) { console.error('Failed to save user to backend:', e); }
     setScreen('setup-pin');
   };
 
@@ -410,11 +441,19 @@ const MobileApp = () => {
     setShowAddMember(false);
   };
 
-  const handleSaveProfile = () => {
+  const handleSaveProfile = async () => {
     const updated = { ...userData, ...editedUser };
     setUserData(updated); localStorage.setItem('userData', JSON.stringify(updated));
     setEditProfile(false); setProfileMsg('Profile updated!');
     setTimeout(() => setProfileMsg(''), 3000);
+    // Sync to backend
+    try {
+      await fetch(`${API_URL}/api/user/${updated.phone}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: updated.name, dob: updated.dob, gender: updated.gender, address: updated.address })
+      });
+    } catch (e) { console.error('Failed to sync profile:', e); }
   };
 
   const handleChangePin = () => {
@@ -436,7 +475,7 @@ const MobileApp = () => {
 
         {screen === 'login' && <LoginScreen onLogin={handleLoginSubmit} />}
 
-        {screen === 'otp' && <OtpScreen phoneNumber={phoneNumber} onVerify={handleOtpVerify} onBack={() => setScreen('login')} />}
+        {screen === 'otp' && <OtpScreen phoneNumber={phoneNumber} onVerify={handleOtpVerify} onBack={() => setScreen('login')} loading={userLoading} />}
 
         {screen === 'credential-issuer' && (
           <div className="p-8">
